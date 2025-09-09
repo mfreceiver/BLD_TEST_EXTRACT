@@ -7,7 +7,7 @@ using System.Threading;
 public class AppConfig
 {
     public int PollingIntervalSeconds { get; set; }
-    public string SourceDir { get; set; }
+    public string[] SourceDirs { get; set; }
     public string ArchiveDir { get; set; }
     public string LogDir { get; set; }
     public string ResultCsv { get; set; }
@@ -70,15 +70,19 @@ public class Program
         {
             Log($"[{DateTime.Now:HH:mm:ss}] 开始轮询...");
 
-            string[] files = Directory.GetFiles(_config.SourceDir, "*.upl");
-            Log($"[{DateTime.Now:HH:mm:ss}] 发现 {files.Length} 个文件。");
-
-            foreach (string file in files)
+            int totalFilesProcessed = 0;
+            foreach (var sourceDir in _config.SourceDirs)
             {
-                ProcessFile(file);
+                string[] files = Directory.GetFiles(sourceDir, "*.upl");
+                totalFilesProcessed += files.Length;
+
+                foreach (string file in files)
+                {
+                    ProcessFile(file);
+                }
             }
 
-            Log($"[{DateTime.Now:HH:mm:ss}] 本次轮询完成，将在 {_config.PollingIntervalSeconds} 秒后再次轮询。");
+            Log($"[{DateTime.Now:HH:mm:ss}] 本次轮询处理了 {totalFilesProcessed} 个文件，将在 {_config.PollingIntervalSeconds} 秒后再次轮询。");
         }
         catch (Exception ex)
         {
@@ -141,7 +145,14 @@ public class Program
                 File.AppendAllText(_config.ResultCsv, csvLine + Environment.NewLine);
             }
 
-            string destPath = Path.Combine(_config.ArchiveDir, fileName);
+            // 移动文件到以日期命名的子目录
+            string todayDir = DateTime.Now.ToString("yyyy-MM-dd");
+            string destDir = Path.Combine(_config.ArchiveDir, todayDir);
+            if (!Directory.Exists(destDir))
+            {
+                Directory.CreateDirectory(destDir);
+            }
+            string destPath = Path.Combine(destDir, fileName);
             File.Move(filePath, destPath);
 
             DateTime endTime = DateTime.Now;
@@ -175,10 +186,10 @@ public class Program
         try
         {
             string configPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "config.ini");
-            
+
             if (!File.Exists(configPath))
             {
-                string defaultConfig = "[CONFIG]\r\nPOLLING_INTERVAL_SECONDS=60\r\nSOURCE_DIR=./SOURCE_DIR\r\nARCHIVE_DIR=./ARCHIVE_DIR\r\nLOG_DIR=./LOG_DIR\r\nRESULT_CSV=./BLD_RESULT.csv";
+                string defaultConfig = "[CONFIG]\r\nPOLLING_INTERVAL_SECONDS=60\r\nSOURCE_DIRS=./SOURCE_DIR\r\nARCHIVE_DIR=./ARCHIVE_DIR\r\nLOG_DIR=./LOG_DIR\r\nRESULT_CSV=./BLD_RESULT.csv";
                 File.WriteAllText(configPath, defaultConfig);
                 Console.WriteLine($"未找到 config.ini 文件，已自动创建默认配置文件。");
             }
@@ -187,7 +198,14 @@ public class Program
             foreach (var line in lines)
             {
                 if (line.StartsWith("POLLING_INTERVAL_SECONDS")) _config.PollingIntervalSeconds = int.Parse(line.Split('=')[1].Trim());
-                if (line.StartsWith("SOURCE_DIR")) _config.SourceDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, line.Split('=')[1].Trim().Replace("./", ""));
+                if (line.StartsWith("SOURCE_DIRS"))
+                {
+                    _config.SourceDirs = line.Split('=')[1].Trim().Split(',');
+                    for (int i = 0; i < _config.SourceDirs.Length; i++)
+                    {
+                        _config.SourceDirs[i] = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, _config.SourceDirs[i].Trim().Replace("./", ""));
+                    }
+                }
                 if (line.StartsWith("ARCHIVE_DIR")) _config.ArchiveDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, line.Split('=')[1].Trim().Replace("./", ""));
                 if (line.StartsWith("LOG_DIR")) _config.LogDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, line.Split('=')[1].Trim().Replace("./", ""));
                 if (line.StartsWith("RESULT_CSV")) _config.ResultCsv = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, line.Split('=')[1].Trim().Replace("./", ""));
@@ -203,7 +221,10 @@ public class Program
 
     private static void CheckDirectories()
     {
-        if (!Directory.Exists(_config.SourceDir)) Directory.CreateDirectory(_config.SourceDir);
+        foreach (var sourceDir in _config.SourceDirs)
+        {
+            if (!Directory.Exists(sourceDir)) Directory.CreateDirectory(sourceDir);
+        }
         if (!Directory.Exists(_config.ArchiveDir)) Directory.CreateDirectory(_config.ArchiveDir);
         if (!Directory.Exists(_config.LogDir)) Directory.CreateDirectory(_config.LogDir);
     }
