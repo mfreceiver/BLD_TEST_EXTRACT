@@ -32,7 +32,7 @@ public class Program
     private static AppConfig _config;
     private static Timer _timer;
     // TODO: 请将以下连接字符串替换为你的Oracle数据库信息
-    private const string _oracleConnStr = "Data Source=YourDataSource;User Id=YourUserId;Password=YourPassword;";
+    private const string _oracleConnStr = "User Id=your_user;Password=your_password;Data Source=your_data_source";
 
     public static void Main(string[] args)
     {
@@ -42,6 +42,7 @@ public class Program
         if (runningProcesses.Length > 1)
         {
             Console.WriteLine($"已检测到 {currentProcessName} 的另一个实例正在运行。为了避免重复上传，此实例将退出。");
+            Console.ReadKey();
             return;
         }
 
