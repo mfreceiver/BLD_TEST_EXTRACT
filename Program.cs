@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Text.RegularExpressions;
 using System.Threading;
+using System.Diagnostics;
 using Oracle.ManagedDataAccess.Client;
 using Oracle.ManagedDataAccess.Types;
 
@@ -35,6 +36,15 @@ public class Program
 
     public static void Main(string[] args)
     {
+        // 检查是否已有实例在运行
+        string currentProcessName = Process.GetCurrentProcess().ProcessName;
+        Process[] runningProcesses = Process.GetProcessesByName(currentProcessName);
+        if (runningProcesses.Length > 1)
+        {
+            Console.WriteLine($"已检测到 {currentProcessName} 的另一个实例正在运行。此实例将退出。");
+            return;
+        }
+
         Console.WriteLine("文件处理应用已启动...");
         Console.WriteLine("输入 'exit' 或 'quit' 来退出程序。");
 
@@ -172,7 +182,7 @@ public class Program
                 Directory.CreateDirectory(destDir);
             }
             string destPath = Path.Combine(destDir, fileName);
-            
+
             // 如果目标文件存在，则先删除
             if (File.Exists(destPath))
             {
