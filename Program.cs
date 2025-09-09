@@ -3,6 +3,8 @@ using System.Collections.Generic;
 using System.IO;
 using System.Text.RegularExpressions;
 using System.Threading;
+using Oracle.ManagedDataAccess.Client;
+using Oracle.ManagedDataAccess.Types;
 
 public class AppConfig
 {
@@ -28,6 +30,8 @@ public class Program
 {
     private static AppConfig _config;
     private static Timer _timer;
+    // TODO: 请将以下连接字符串替换为你的Oracle数据库信息
+    private const string _oracleConnStr = "Data Source=YourDataSource;User Id=YourUserId;Password=YourPassword;";
 
     public static void Main(string[] args)
     {
@@ -122,6 +126,7 @@ public class Program
                 string resultValue = string.IsNullOrEmpty(abResult) ? "NA" : abResult;
                 string csvLine = $"{string.Join(",", commonInfo)},{testTypeAb},{resultValue}";
                 File.AppendAllText(_config.ResultCsv, csvLine + Environment.NewLine);
+                WriteToOracle(fileName, barcode, sendTime, resultTime, testTypeAb, resultValue);
             }
 
             // 处理血型结果
@@ -136,6 +141,7 @@ public class Program
                 }
                 string csvLine = $"{string.Join(",", commonInfo)},{testTypeBg},{resultValue}";
                 File.AppendAllText(_config.ResultCsv, csvLine + Environment.NewLine);
+                WriteToOracle(fileName, barcode, sendTime, resultTime, testTypeBg, resultValue);
             }
 
             // 如果都没有，也需要写入一行NA
@@ -143,9 +149,9 @@ public class Program
             {
                 string csvLine = $"{string.Join(",", commonInfo)},NA,NA";
                 File.AppendAllText(_config.ResultCsv, csvLine + Environment.NewLine);
+                WriteToOracle(fileName, barcode, sendTime, resultTime, "NA", "NA");
             }
 
-            // 移动文件到以日期命名的子目录
             string todayDir = DateTime.Now.ToString("yyyy-MM-dd");
             string destDir = Path.Combine(_config.ArchiveDir, todayDir);
             if (!Directory.Exists(destDir))
@@ -162,6 +168,40 @@ public class Program
         {
             Log($"[{DateTime.Now:HH:mm:ss}] 解析文件 {fileName} 失败: {ex.Message}");
         }
+    }
+
+    private static void WriteToOracle(string fileName, string reqNo, string sendTime, string resultTime, string testName, string testResult)
+    {
+        using (OracleConnection conn = new OracleConnection(_oracleConnStr))
+        {
+            try
+            {
+                conn.Open();
+                string sql = "INSERT INTO zshis.bld_check_result (FILENAME, REQ_NO, SEND_TIME, RESULT_TIME, TEST_NAME, TEST_RESULT, CREATE_TIME) VALUES (:filename, :req_no, :send_time, :result_time, :test_name, :test_result, :create_time)";
+                using (OracleCommand cmd = new OracleCommand(sql, conn))
+                {
+                    cmd.Parameters.Add(new OracleParameter("filename", fileName));
+                    cmd.Parameters.Add(new OracleParameter("req_no", reqNo));
+                    cmd.Parameters.Add(new OracleParameter("send_time", ParseToOracleTimestamp(sendTime)));
+                    cmd.Parameters.Add(new OracleParameter("result_time", ParseToOracleTimestamp(resultTime)));
+                    cmd.Parameters.Add(new OracleParameter("test_name", testName));
+                    cmd.Parameters.Add(new OracleParameter("test_result", testResult));
+                    cmd.Parameters.Add(new OracleParameter("create_time", DateTime.Now));
+                    cmd.ExecuteNonQuery();
+                }
+                Log($"[{DateTime.Now:HH:mm:ss}] 数据已成功写入 Oracle 数据库。");
+            }
+            catch (Exception ex)
+            {
+                Log($"[{DateTime.Now:HH:mm:ss}] 写入 Oracle 数据库失败: {ex.Message}");
+            }
+        }
+    }
+
+    private static DateTime ParseToOracleTimestamp(string timestampStr)
+    {
+        // 格式为 YYYYMMDDHHMMSS
+        return DateTime.ParseExact(timestampStr, "yyyyMMddHHmmss", System.Globalization.CultureInfo.InvariantCulture);
     }
 
     private static void EnsureCsvHeader()
