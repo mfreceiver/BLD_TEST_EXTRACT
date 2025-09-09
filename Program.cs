@@ -100,52 +100,46 @@ public class Program
             string sendTime = GetMatch(fileContent, RegexPatterns.SendTime);
             string resultTime = GetMatch(fileContent, RegexPatterns.ResultTime);
 
-            List<string> results = new List<string>();
-            results.Add(fileName);
-            results.Add(barcode);
-            results.Add(sendTime);
-            results.Add(resultTime);
+            EnsureCsvHeader();
 
+            List<string> commonInfo = new List<string>
+            {
+                fileName,
+                barcode,
+                sendTime,
+                resultTime
+            };
+
+            // 处理抗体筛查结果
             string testTypeAb = GetMatch(fileContent, RegexPatterns.TestTypeAbScreening);
             if (!string.IsNullOrEmpty(testTypeAb))
             {
-                results.Add(testTypeAb);
                 string abResult = GetMatch(fileContent, RegexPatterns.ResultAbScreening);
-                results.Add(string.IsNullOrEmpty(abResult) ? "NA" : abResult);
-            }
-            else
-            {
-                results.Add("NA");
-                results.Add("NA");
+                string resultValue = string.IsNullOrEmpty(abResult) ? "NA" : abResult;
+                string csvLine = $"{string.Join(",", commonInfo)},{testTypeAb},{resultValue}";
+                File.AppendAllText(_config.ResultCsv, csvLine + Environment.NewLine);
             }
 
+            // 处理血型结果
             string testTypeBg = GetMatch(fileContent, RegexPatterns.TestTypeBloodgroup);
             if (!string.IsNullOrEmpty(testTypeBg))
             {
-                results.Add(testTypeBg);
                 Match match = Regex.Match(fileContent, RegexPatterns.ResultBloodgroup);
+                string resultValue = "NA";
                 if (match.Success && match.Groups.Count >= 3)
                 {
-                    results.Add(match.Groups[1].Value);
-                    results.Add(match.Groups[2].Value);
+                    resultValue = $"{match.Groups[1].Value}|{match.Groups[2].Value}";
                 }
-                else
-                {
-                    results.Add("NA");
-                    results.Add("NA");
-                }
+                string csvLine = $"{string.Join(",", commonInfo)},{testTypeBg},{resultValue}";
+                File.AppendAllText(_config.ResultCsv, csvLine + Environment.NewLine);
             }
-            else
+
+            // 如果都没有，也需要写入一行NA
+            if (string.IsNullOrEmpty(testTypeAb) && string.IsNullOrEmpty(testTypeBg))
             {
-                results.Add("NA");
-                results.Add("NA");
-                results.Add("NA");
+                string csvLine = $"{string.Join(",", commonInfo)},NA,NA";
+                File.AppendAllText(_config.ResultCsv, csvLine + Environment.NewLine);
             }
-
-            EnsureCsvHeader();
-
-            string csvLine = string.Join(",", results.ToArray());
-            File.AppendAllText(_config.ResultCsv, csvLine + Environment.NewLine);
 
             string destPath = Path.Combine(_config.ArchiveDir, fileName);
             File.Move(filePath, destPath);
@@ -163,7 +157,7 @@ public class Program
     {
         if (!File.Exists(_config.ResultCsv))
         {
-            string header = "FILENAME,REQ_NO,SEND_TIME,RESULT_TIME,ABSCR_NAME,ABSCR_RESULT,TYPE_NAME,ABO_RESULT,RH_RESULT";
+            string header = "FILENAME,REQ_NO,SEND_TIME,RESULT_TIME,TEST_NAME,TEST_RESULT";
             File.WriteAllText(_config.ResultCsv, header + Environment.NewLine);
         }
     }
@@ -181,8 +175,7 @@ public class Program
         try
         {
             string configPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "config.ini");
-
-            // 如果文件不存在，则创建它
+            
             if (!File.Exists(configPath))
             {
                 string defaultConfig = "[CONFIG]\r\nPOLLING_INTERVAL_SECONDS=60\r\nSOURCE_DIR=./SOURCE_DIR\r\nARCHIVE_DIR=./ARCHIVE_DIR\r\nLOG_DIR=./LOG_DIR\r\nRESULT_CSV=./BLD_RESULT.csv";
