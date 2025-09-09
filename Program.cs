@@ -31,7 +31,7 @@ public class Program
     private static AppConfig _config;
     private static Timer _timer;
     // TODO: 请将以下连接字符串替换为你的Oracle数据库信息
-    private const string _oracleConnStr = "Data Source=YourDataSource;User Id=YourUserId;Password=YourPassword;";
+    private const string _oracleConnStr = "-";
 
     public static void Main(string[] args)
     {
