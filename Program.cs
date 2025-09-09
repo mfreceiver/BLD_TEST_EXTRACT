@@ -31,7 +31,7 @@ public class Program
     private static AppConfig _config;
     private static Timer _timer;
     // TODO: 请将以下连接字符串替换为你的Oracle数据库信息
-    private const string _oracleConnStr = "-";
+    private const string _oracleConnStr = "Data Source=YourDataSource;User Id=YourUserId;Password=YourPassword;";
 
     public static void Main(string[] args)
     {
@@ -108,7 +108,10 @@ public class Program
             string sendTime = GetMatch(fileContent, RegexPatterns.SendTime);
             string resultTime = GetMatch(fileContent, RegexPatterns.ResultTime);
 
-            EnsureCsvHeader();
+            if (!string.IsNullOrEmpty(_config.ResultCsv))
+            {
+                EnsureCsvHeader();
+            }
 
             List<string> commonInfo = new List<string>
             {
@@ -124,8 +127,11 @@ public class Program
             {
                 string abResult = GetMatch(fileContent, RegexPatterns.ResultAbScreening);
                 string resultValue = string.IsNullOrEmpty(abResult) ? "NA" : abResult;
-                string csvLine = $"{string.Join(",", commonInfo)},{testTypeAb},{resultValue}";
-                File.AppendAllText(_config.ResultCsv, csvLine + Environment.NewLine);
+                if (!string.IsNullOrEmpty(_config.ResultCsv))
+                {
+                    string csvLine = $"{string.Join(",", commonInfo)},{testTypeAb},{resultValue}";
+                    File.AppendAllText(_config.ResultCsv, csvLine + Environment.NewLine);
+                }
                 WriteToOracle(fileName, barcode, sendTime, resultTime, testTypeAb, resultValue);
             }
 
@@ -139,19 +145,26 @@ public class Program
                 {
                     resultValue = $"{match.Groups[1].Value}|{match.Groups[2].Value}";
                 }
-                string csvLine = $"{string.Join(",", commonInfo)},{testTypeBg},{resultValue}";
-                File.AppendAllText(_config.ResultCsv, csvLine + Environment.NewLine);
+                if (!string.IsNullOrEmpty(_config.ResultCsv))
+                {
+                    string csvLine = $"{string.Join(",", commonInfo)},{testTypeBg},{resultValue}";
+                    File.AppendAllText(_config.ResultCsv, csvLine + Environment.NewLine);
+                }
                 WriteToOracle(fileName, barcode, sendTime, resultTime, testTypeBg, resultValue);
             }
 
             // 如果都没有，也需要写入一行NA
             if (string.IsNullOrEmpty(testTypeAb) && string.IsNullOrEmpty(testTypeBg))
             {
-                string csvLine = $"{string.Join(",", commonInfo)},NA,NA";
-                File.AppendAllText(_config.ResultCsv, csvLine + Environment.NewLine);
+                if (!string.IsNullOrEmpty(_config.ResultCsv))
+                {
+                    string csvLine = $"{string.Join(",", commonInfo)},NA,NA";
+                    File.AppendAllText(_config.ResultCsv, csvLine + Environment.NewLine);
+                }
                 WriteToOracle(fileName, barcode, sendTime, resultTime, "NA", "NA");
             }
 
+            // 移动文件到以日期命名的子目录，如果存在同名文件则覆盖
             string todayDir = DateTime.Now.ToString("yyyy-MM-dd");
             string destDir = Path.Combine(_config.ArchiveDir, todayDir);
             if (!Directory.Exists(destDir))
@@ -159,6 +172,13 @@ public class Program
                 Directory.CreateDirectory(destDir);
             }
             string destPath = Path.Combine(destDir, fileName);
+            
+            // 如果目标文件存在，则先删除
+            if (File.Exists(destPath))
+            {
+                File.Delete(destPath);
+                Log($"[{DateTime.Now:HH:mm:ss}] 发现同名文件并已覆盖: {fileName}");
+            }
             File.Move(filePath, destPath);
 
             DateTime endTime = DateTime.Now;
@@ -200,7 +220,6 @@ public class Program
 
     private static DateTime ParseToOracleTimestamp(string timestampStr)
     {
-        // 格式为 YYYYMMDDHHMMSS
         return DateTime.ParseExact(timestampStr, "yyyyMMddHHmmss", System.Globalization.CultureInfo.InvariantCulture);
     }
 
@@ -212,7 +231,6 @@ public class Program
             File.WriteAllText(_config.ResultCsv, header + Environment.NewLine);
         }
     }
-
 
     private static string GetMatch(string text, string pattern)
     {
@@ -248,7 +266,7 @@ public class Program
                 }
                 if (line.StartsWith("ARCHIVE_DIR")) _config.ArchiveDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, line.Split('=')[1].Trim().Replace("./", ""));
                 if (line.StartsWith("LOG_DIR")) _config.LogDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, line.Split('=')[1].Trim().Replace("./", ""));
-                if (line.StartsWith("RESULT_CSV")) _config.ResultCsv = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, line.Split('=')[1].Trim().Replace("./", ""));
+                if (line.StartsWith("RESULT_CSV")) _config.ResultCsv = line.Split('=')[1].Trim().Replace("./", "");
             }
             return true;
         }
