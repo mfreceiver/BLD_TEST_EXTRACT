@@ -41,7 +41,7 @@ public class Program
         Process[] runningProcesses = Process.GetProcessesByName(currentProcessName);
         if (runningProcesses.Length > 1)
         {
-            Console.WriteLine($"已检测到 {currentProcessName} 的另一个实例正在运行。此实例将退出。");
+            Console.WriteLine($"已检测到 {currentProcessName} 的另一个实例正在运行。为了避免重复上传，此实例将退出。");
             return;
         }
 
