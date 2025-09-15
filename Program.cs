@@ -4,6 +4,7 @@ using System.IO;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Diagnostics;
+using System.Globalization;
 using Oracle.ManagedDataAccess.Client;
 using Oracle.ManagedDataAccess.Types;
 
@@ -32,7 +33,7 @@ public class Program
     private static AppConfig _config;
     private static Timer _timer;
     // TODO: 请将以下连接字符串替换为你的Oracle数据库信息
-    private const string _oracleConnStr = "User Id=your_user;Password=your_password;Data Source=your_data_source";
+    private const string _oracleConnStr = "Data Source=YourDataSource;User Id=YourUserId;Password=YourPassword;";
 
     public static void Main(string[] args)
     {
@@ -41,8 +42,7 @@ public class Program
         Process[] runningProcesses = Process.GetProcessesByName(currentProcessName);
         if (runningProcesses.Length > 1)
         {
-            Console.WriteLine($"已检测到 {currentProcessName} 的另一个实例正在运行。为了避免重复上传，此实例将退出。");
-            Console.ReadKey();
+            Console.WriteLine($"已检测到 {currentProcessName} 的另一个实例正在运行。此实例将退出。");
             return;
         }
 
@@ -175,7 +175,6 @@ public class Program
                 WriteToOracle(fileName, barcode, sendTime, resultTime, "NA", "NA");
             }
 
-            // 移动文件到以日期命名的子目录，如果存在同名文件则覆盖
             string todayDir = DateTime.Now.ToString("yyyy-MM-dd");
             string destDir = Path.Combine(_config.ArchiveDir, todayDir);
             if (!Directory.Exists(destDir))
@@ -184,7 +183,6 @@ public class Program
             }
             string destPath = Path.Combine(destDir, fileName);
 
-            // 如果目标文件存在，则先删除
             if (File.Exists(destPath))
             {
                 File.Delete(destPath);
@@ -231,7 +229,15 @@ public class Program
 
     private static DateTime ParseToOracleTimestamp(string timestampStr)
     {
-        return DateTime.ParseExact(timestampStr, "yyyyMMddHHmmss", System.Globalization.CultureInfo.InvariantCulture);
+        DateTime parsedDate;
+        // 使用 TryParseExact 尝试解析，如果失败则返回一个默认的、可识别的日期
+        if (DateTime.TryParseExact(timestampStr, "yyyyMMddHHmmss", CultureInfo.InvariantCulture, DateTimeStyles.None, out parsedDate))
+        {
+            return parsedDate;
+        }
+
+        Log($"[{DateTime.Now:HH:mm:ss}] 警告：日期字符串 '{timestampStr}' 格式无效，将使用默认值。");
+        return DateTime.MinValue; // 返回一个数据库能识别的默认日期
     }
 
     private static void EnsureCsvHeader()
