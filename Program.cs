@@ -15,12 +15,13 @@ public class AppConfig
     public string ArchiveDir { get; set; }
     public string LogDir { get; set; }
     public string ResultCsv { get; set; }
+    public int DeleteBmp { get; set; }
 }
 
 public static class RegexPatterns
 {
     public const string Barcode = @"P\|1\|\|(.*?)\|";
-    public const string SendTime = @"H\|.*\|\|(\d{14})";
+    public const string SendTime = @"H\|.*\|\|\|\|(\d{14})";
     public const string ResultTime = @"O\|1\|\|.*?\|.*?\|.*?\|(\d{14})";
     public const string TestTypeAbScreening = @"Result\^(\w+)\^Ab\.screening";
     public const string ResultAbScreening = @"Result\^CN15B\^.*?\|\^\^(.+?)\^";
@@ -95,6 +96,11 @@ public class Program
                 {
                     ProcessFile(file);
                 }
+
+                if (_config.DeleteBmp == 1)
+                {
+                    DeleteBmpFiles(sourceDir);
+                }
             }
 
             Log($"[{DateTime.Now:HH:mm:ss}] 本次轮询处理了 {totalFilesProcessed} 个文件，将在 {_config.PollingIntervalSeconds} 秒后再次轮询。");
@@ -132,7 +138,6 @@ public class Program
                 resultTime
             };
 
-            // 处理抗体筛查结果
             string testTypeAb = GetMatch(fileContent, RegexPatterns.TestTypeAbScreening);
             if (!string.IsNullOrEmpty(testTypeAb))
             {
@@ -146,7 +151,6 @@ public class Program
                 WriteToOracle(fileName, barcode, sendTime, resultTime, testTypeAb, resultValue);
             }
 
-            // 处理血型结果
             string testTypeBg = GetMatch(fileContent, RegexPatterns.TestTypeBloodgroup);
             if (!string.IsNullOrEmpty(testTypeBg))
             {
@@ -164,7 +168,6 @@ public class Program
                 WriteToOracle(fileName, barcode, sendTime, resultTime, testTypeBg, resultValue);
             }
 
-            // 如果都没有，也需要写入一行NA
             if (string.IsNullOrEmpty(testTypeAb) && string.IsNullOrEmpty(testTypeBg))
             {
                 if (!string.IsNullOrEmpty(_config.ResultCsv))
@@ -207,6 +210,10 @@ public class Program
             {
                 conn.Open();
                 string sql = "INSERT INTO zshis.bld_check_result (FILENAME, REQ_NO, SEND_TIME, RESULT_TIME, TEST_NAME, TEST_RESULT, CREATE_TIME) VALUES (:filename, :req_no, :send_time, :result_time, :test_name, :test_result, :create_time)";
+
+                Log($"[{DateTime.Now:HH:mm:ss}] 准备执行SQL: {sql}");
+                Log($"[{DateTime.Now:HH:mm:ss}] 参数: filename='{fileName}', req_no='{reqNo}', send_time='{sendTime}', result_time='{resultTime}', test_name='{testName}', test_result='{testResult}', create_time='{DateTime.Now:yyyy-MM-dd HH:mm:ss}'");
+
                 using (OracleCommand cmd = new OracleCommand(sql, conn))
                 {
                     cmd.Parameters.Add(new OracleParameter("filename", fileName));
@@ -230,14 +237,13 @@ public class Program
     private static DateTime ParseToOracleTimestamp(string timestampStr)
     {
         DateTime parsedDate;
-        // 使用 TryParseExact 尝试解析，如果失败则返回一个默认的、可识别的日期
         if (DateTime.TryParseExact(timestampStr, "yyyyMMddHHmmss", CultureInfo.InvariantCulture, DateTimeStyles.None, out parsedDate))
         {
             return parsedDate;
         }
 
         Log($"[{DateTime.Now:HH:mm:ss}] 警告：日期字符串 '{timestampStr}' 格式无效，将使用默认值。");
-        return DateTime.MinValue; // 返回一个数据库能识别的默认日期
+        return DateTime.MinValue;
     }
 
     private static void EnsureCsvHeader()
@@ -255,6 +261,27 @@ public class Program
         return match.Success && match.Groups.Count > 1 ? match.Groups[1].Value : string.Empty;
     }
 
+    private static void DeleteBmpFiles(string directory)
+    {
+        string[] bmpFiles = Directory.GetFiles(directory, "*.bmp");
+        if (bmpFiles.Length > 0)
+        {
+            Log($"[{DateTime.Now:HH:mm:ss}] 发现 {bmpFiles.Length} 个BMP文件，准备删除...");
+            foreach (var file in bmpFiles)
+            {
+                try
+                {
+                    File.Delete(file);
+                    Log($"[{DateTime.Now:HH:mm:ss}] 已删除文件: {Path.GetFileName(file)}");
+                }
+                catch (Exception ex)
+                {
+                    Log($"[{DateTime.Now:HH:mm:ss}] 删除文件 {Path.GetFileName(file)} 失败: {ex.Message}");
+                }
+            }
+        }
+    }
+
     private static bool LoadConfig()
     {
         _config = new AppConfig();
@@ -264,7 +291,7 @@ public class Program
 
             if (!File.Exists(configPath))
             {
-                string defaultConfig = "[CONFIG]\r\nPOLLING_INTERVAL_SECONDS=60\r\nSOURCE_DIRS=./SOURCE_DIR\r\nARCHIVE_DIR=./ARCHIVE_DIR\r\nLOG_DIR=./LOG_DIR\r\nRESULT_CSV=./BLD_RESULT.csv";
+                string defaultConfig = "[CONFIG]\r\nPOLLING_INTERVAL_SECONDS=60\r\nSOURCE_DIRS=./SOURCE_DIR\r\nARCHIVE_DIR=./ARCHIVE_DIR\r\nLOG_DIR=./LOG_DIR\r\nRESULT_CSV=./BLD_RESULT.csv\r\nDELETE_BMP=0";
                 File.WriteAllText(configPath, defaultConfig);
                 Console.WriteLine($"未找到 config.ini 文件，已自动创建默认配置文件。");
             }
@@ -284,6 +311,7 @@ public class Program
                 if (line.StartsWith("ARCHIVE_DIR")) _config.ArchiveDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, line.Split('=')[1].Trim().Replace("./", ""));
                 if (line.StartsWith("LOG_DIR")) _config.LogDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, line.Split('=')[1].Trim().Replace("./", ""));
                 if (line.StartsWith("RESULT_CSV")) _config.ResultCsv = line.Split('=')[1].Trim().Replace("./", "");
+                if (line.StartsWith("DELETE_BMP")) _config.DeleteBmp = int.Parse(line.Split('=')[1].Trim());
             }
             return true;
         }
